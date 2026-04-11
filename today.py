@@ -26,7 +26,7 @@ SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 
 # Fixed values that shape the generated README content.
 COMMENT_BLOCK_SIZE = 7
-BIRTHDAY = datetime.datetime(2010, 10, 1)
+BIRTHDAY = datetime.datetime(2008, 4, 14)
 ARCHIVE_USER_ID = "U_kgDOC15JXw"
 CACHE_COMMENT_LINE = "This line is a comment block. Write whatever you want here.\n"
 
