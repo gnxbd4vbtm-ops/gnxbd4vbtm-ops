@@ -4,7 +4,6 @@ SPDX-License-Identifier: Apache-2.0
 Keep the attribution notice from the repository NOTICE file when redistributing.
 """
 
-import datetime
 import hashlib
 import os
 import re
@@ -12,7 +11,6 @@ import time
 from pathlib import Path
 
 import requests
-from dateutil import relativedelta
 from dotenv import load_dotenv
 from lxml.etree import parse
 
@@ -26,12 +24,10 @@ SVG_FILES = ("dark_mode.svg", "light_mode.svg")
 
 # Fixed values that shape the generated README content.
 COMMENT_BLOCK_SIZE = 7
-BIRTHDAY = datetime.datetime(2008, 4, 14)
 ARCHIVE_USER_ID = "U_kgDOC15JXw"
 CACHE_COMMENT_LINE = "This line is a comment block. Write whatever you want here.\n"
 
 # Visual widths used when inserting dot padding in the SVG text fields.
-AGE_DATA_WIDTH = 49
 COMMIT_DATA_WIDTH = 22
 LOC_DATA_WIDTH = 25
 FOLLOWER_DATA_WIDTH = 10
@@ -75,23 +71,6 @@ def configure_environment():
 def cache_file_path():
     hashed_user = hashlib.sha256(USER_NAME.encode("utf-8")).hexdigest()
     return CACHE_DIR / f"{hashed_user}.txt"
-
-
-# Convert the configured birthday into a human-readable uptime string for the SVG card.
-def format_age(birthday):
-    diff = relativedelta.relativedelta(datetime.datetime.today(), birthday)
-    parts = [
-        f"{diff.years} year{format_plural(diff.years)}",
-        f"{diff.months} month{format_plural(diff.months)}",
-        f"{diff.days} day{format_plural(diff.days)}",
-    ]
-    suffix = " 🎂" if diff.months == 0 and diff.days == 0 else ""
-    return ", ".join(parts) + suffix
-
-
-# Return the plural suffix used by the age formatter.
-def format_plural(value):
-    return "s" if value != 1 else ""
 
 
 # Turn an HTTP error into a readable exception that includes the current query counters.
@@ -520,7 +499,6 @@ def stars_counter(edges):
 # Open one SVG template and replace the dynamic text fields used by the README card.
 def svg_overwrite(
     filename,
-    age_data,
     commit_data,
     star_data,
     repo_data,
@@ -532,7 +510,6 @@ def svg_overwrite(
     root = tree.getroot()
 
     # Each field has its own width target so the dots keep the card aligned like terminal output.
-    justify_format(root, "age_data", age_data, AGE_DATA_WIDTH)
     justify_format(root, "commit_data", commit_data, COMMIT_DATA_WIDTH)
     justify_format(root, "star_data", star_data, STAR_DATA_WIDTH)
     justify_format(root, "repo_data", repo_data, REPO_DATA_WIDTH)
@@ -541,6 +518,7 @@ def svg_overwrite(
     justify_format(root, "loc_data", loc_data[2], LOC_DATA_WIDTH)
     justify_format(root, "loc_add", format_compact_number(loc_data[0]))
     justify_format(root, "loc_del", format_compact_number(loc_data[1]), 5)
+
     find_and_replace(
         root,
         "repo_stats_gap",
@@ -551,6 +529,7 @@ def svg_overwrite(
         "commit_stats_gap",
         secondary_stat_gap(commit_stats_left_width(commit_data)),
     )
+
     tree.write(filename, encoding="utf-8", xml_declaration=True)
 
 
@@ -636,22 +615,27 @@ def format_compact_number(value):
 def commit_counter(comment_size):
     total_commits = 0
     filename = cache_file_path()
+
     with filename.open("r") as handle:
         data = handle.readlines()
+
     for line in data[comment_size:]:
         total_commits += int(line.split()[2])
+
     return total_commits
 
 
 # Fetch the GitHub user id used later to identify which commits belong to the current profile.
 def user_getter(username):
     query_count("user_getter")
+
     query = """
     query($login: String!){
         user(login: $login) {
             id
         }
     }"""
+
     data = graphql_request("user_getter", query, {"login": username})
     return data["user"]["id"]
 
@@ -659,6 +643,7 @@ def user_getter(username):
 # Fetch the follower count shown on the SVG card.
 def follower_getter(username):
     query_count("follower_getter")
+
     query = """
     query($login: String!){
         user(login: $login) {
@@ -667,6 +652,7 @@ def follower_getter(username):
             }
         }
     }"""
+
     data = graphql_request("follower_getter", query, {"login": username})
     return int(data["user"]["followers"]["totalCount"])
 
@@ -691,7 +677,6 @@ def print_duration(label, duration):
 
 # Apply the same computed values to both SVG variants used by the README.
 def update_svg_files(
-    age_data,
     commit_data,
     star_data,
     repo_data,
@@ -702,7 +687,6 @@ def update_svg_files(
     for svg_file in SVG_FILES:
         svg_overwrite(
             svg_file,
-            age_data,
             commit_data,
             star_data,
             repo_data,
@@ -730,9 +714,6 @@ def main():
     print(OWNER_ID)
     print_duration("account data", user_time)
 
-    age_data, age_time = perf_counter(format_age, BIRTHDAY)
-    print_duration("age calculation", age_time)
-
     total_loc, loc_time = perf_counter(
         loc_query,
         ["OWNER", "COLLABORATOR", "ORGANIZATION_MEMBER"],
@@ -740,13 +721,24 @@ def main():
     )
     print_duration("LOC (cached)" if total_loc[-1] else "LOC (no cache)", loc_time)
 
-    commit_data, commit_time = perf_counter(commit_counter, COMMENT_BLOCK_SIZE)
+    commit_data, commit_time = perf_counter(
+        commit_counter,
+        COMMENT_BLOCK_SIZE,
+    )
     print_duration("commit count", commit_time)
 
-    star_data, star_time = perf_counter(graph_repos_stars, "stars", ["OWNER"])
+    star_data, star_time = perf_counter(
+        graph_repos_stars,
+        "stars",
+        ["OWNER"],
+    )
     print_duration("stars", star_time)
 
-    repo_data, repo_time = perf_counter(graph_repos_stars, "repos", ["OWNER"])
+    repo_data, repo_time = perf_counter(
+        graph_repos_stars,
+        "repos",
+        ["OWNER"],
+    )
     print_duration("repos", repo_time)
 
     contrib_data, contrib_time = perf_counter(
@@ -756,14 +748,19 @@ def main():
     )
     print_duration("contributed repos", contrib_time)
 
-    follower_data, follower_time = perf_counter(follower_getter, USER_NAME)
+    follower_data, follower_time = perf_counter(
+        follower_getter,
+        USER_NAME,
+    )
     print_duration("followers", follower_time)
 
     # Only this specific user has deleted-repository stats tracked in the archive file.
     if OWNER_ID == ARCHIVE_USER_ID:
         archived_data = add_archive()
+
         for index in range(len(total_loc) - 1):
             total_loc[index] += archived_data[index]
+
         contrib_data += archived_data[-1]
         commit_data += archived_data[-2]
 
@@ -771,7 +768,6 @@ def main():
     total_loc[:-1] = [f"{value:,}" for value in total_loc[:-1]]
 
     update_svg_files(
-        age_data,
         commit_data,
         star_data,
         repo_data,
@@ -782,7 +778,6 @@ def main():
 
     total_runtime = (
         user_time
-        + age_time
         + loc_time
         + commit_time
         + star_time
@@ -790,8 +785,10 @@ def main():
         + contrib_time
         + follower_time
     )
+
     print(f"{'Total function time:':<21} {total_runtime:>11.4f} s")
     print(f"Total GitHub GraphQL API calls: {sum(QUERY_COUNT.values()):>3}")
+
     for function_name, count in QUERY_COUNT.items():
         print(f"   {function_name + ':':<25} {count:>6}")
 
